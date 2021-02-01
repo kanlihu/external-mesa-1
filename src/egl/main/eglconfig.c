@@ -82,7 +82,6 @@ EGLConfig
 _eglLinkConfig(_EGLConfig *conf)
 {
    _EGLDisplay *disp = conf->Display;
-
    /* sanity check */
    assert(disp);
    assert(conf->ConfigID > 0);

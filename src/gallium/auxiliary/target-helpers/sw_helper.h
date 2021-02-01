@@ -89,6 +89,7 @@ sw_screen_create(struct sw_winsys *winsys)
 #endif
 
    driver = debug_get_option("GALLIUM_DRIVER", default_driver);
+   default_driver = "llvmpipe";
    return sw_screen_create_named(winsys, driver);
 }
 

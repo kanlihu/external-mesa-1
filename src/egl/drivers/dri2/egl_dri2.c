@@ -738,6 +738,7 @@ static const struct dri2_extension_match swrast_driver_extensions[] = {
 
 static const struct dri2_extension_match swrast_core_extensions[] = {
    { __DRI_TEX_BUFFER, 2, offsetof(struct dri2_egl_display, tex_buffer) },
+   { __DRI_IMAGE, 1, offsetof(struct dri2_egl_display, image) },
    { NULL, 0, 0 }
 };
 
@@ -1057,6 +1058,7 @@ dri2_setup_swap_interval(_EGLDisplay *disp, int max_swap_interval)
    }
 }
 
+
 /* All platforms but DRM call this function to create the screen and populate
  * the driver_configs. DRM inherits that information from its display - GBM.
  */
@@ -1117,10 +1119,11 @@ dri2_setup_extensions(_EGLDisplay *disp)
 
    extensions = dri2_dpy->core->getExtensions(dri2_dpy->dri_screen);
 
-   if (dri2_dpy->image_driver || dri2_dpy->dri2)
+   if (dri2_dpy->image_driver || dri2_dpy->dri2) {
       mandatory_core_extensions = dri2_core_extensions;
-   else
+   } else {
       mandatory_core_extensions = swrast_core_extensions;
+   }
 
    if (!dri2_bind_extensions(dri2_dpy, mandatory_core_extensions, extensions, false))
       return EGL_FALSE;

@@ -26,6 +26,7 @@ LOCAL_CFLAGS += -D_GNU_SOURCE
 endif
 
 LOCAL_C_INCLUDES += \
+	system/core/include \
 	$(MESA_TOP)/src \
 	$(MESA_TOP)/include
 

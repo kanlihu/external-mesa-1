@@ -45,6 +45,8 @@ LOCAL_CFLAGS := \
 	-DHAVE_ANDROID_PLATFORM
 
 LOCAL_C_INCLUDES := \
+	system/core/include \
+	$(MESA_TOP)/src/gallium/include \
 	$(MESA_TOP)/include \
 	$(MESA_TOP)/src/egl/main \
 	$(MESA_TOP)/src/egl/drivers/dri2

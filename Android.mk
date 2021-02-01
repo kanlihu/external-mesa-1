@@ -50,11 +50,16 @@ else
 MESA_LEX     := $(LEX)
 endif
 
+HAVE_GALLIUM_SOFTPIPE:=true
+HAVE_GALLIUM_LLVMPIPE:=true
+HAVE_GALLIUM_VIRGL:=true
+MESA_ENABLE_LLVM := true
 # Lists to convert driver names to boolean variables
 # in form of <driver name>.<boolean make variable>
 classic_drivers := i915.HAVE_I915_DRI i965.HAVE_I965_DRI
 gallium_drivers := \
 	swrast.HAVE_GALLIUM_SOFTPIPE \
+	swrast.HAVE_GALLIUM_LLVMPIPE \
 	freedreno.HAVE_GALLIUM_FREEDRENO \
 	i915g.HAVE_GALLIUM_I915 \
 	nouveau.HAVE_GALLIUM_NOUVEAU \
@@ -98,7 +103,7 @@ define mesa-build-with-llvm
   $(if $(filter $(MESA_ANDROID_MAJOR_VERSION), 4 5 6 7), \
     $(warning Unsupported LLVM version in Android $(MESA_ANDROID_MAJOR_VERSION)),) \
   $(eval LOCAL_CFLAGS += -DLLVM_AVAILABLE -DLLVM_IS_SHARED=1 -DMESA_LLVM_VERSION_STRING=\"3.9\") \
-  $(eval LOCAL_SHARED_LIBRARIES += libLLVM)
+  $(eval LOCAL_SHARED_LIBRARIES += libLLVM_android)
 endef
 
 # add subdirectories

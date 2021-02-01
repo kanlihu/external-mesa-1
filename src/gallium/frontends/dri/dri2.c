@@ -726,6 +726,115 @@ dri2_update_tex_buffer(struct dri_drawable *drawable,
    /* no-op */
 }
 
+static enum pipe_format dri2_format_to_pipe_format (int format)
+{
+   enum pipe_format pf;
+
+   switch (format) {
+   case __DRI_IMAGE_FORMAT_RGB565:
+      pf = PIPE_FORMAT_B5G6R5_UNORM;
+      break;
+   case __DRI_IMAGE_FORMAT_XRGB8888:
+      pf = PIPE_FORMAT_BGRX8888_UNORM;
+      break;
+   case __DRI_IMAGE_FORMAT_ARGB8888:
+      pf = PIPE_FORMAT_BGRA8888_UNORM;
+      break;
+   case __DRI_IMAGE_FORMAT_ABGR8888:
+      pf = PIPE_FORMAT_RGBA8888_UNORM;
+      break;
+   case __DRI_IMAGE_FORMAT_R8:
+      pf = PIPE_FORMAT_R8_UNORM;
+      break;
+   case __DRI_IMAGE_FORMAT_GR88:
+      pf = PIPE_FORMAT_RG88_UNORM;
+      break;
+   default:
+      pf = PIPE_FORMAT_NONE;
+      break;
+   }
+
+   return pf;
+}
+
+__DRIimage *
+dri2_create_image_from_winsys_old(__DRIscreen *_screen,
+                              int width, int height, int format,
+                              int num_handles, struct winsys_handle *whandle,
+                              void *loaderPrivate)
+{
+   struct dri_screen *screen = dri_screen(_screen);
+   struct pipe_screen *pscreen = screen->base.screen;
+   __DRIimage *img;
+   struct pipe_resource templ;
+   unsigned tex_usage;
+   enum pipe_format pf;
+   int i;
+
+   tex_usage = PIPE_BIND_RENDER_TARGET | PIPE_BIND_SAMPLER_VIEW;
+
+   pf = dri2_format_to_pipe_format (format);
+   if (pf == PIPE_FORMAT_NONE)
+      return NULL;
+
+   img = CALLOC_STRUCT(__DRIimageRec);
+   if (!img)
+      return NULL;
+
+   memset(&templ, 0, sizeof(templ));
+   templ.bind = tex_usage;
+   templ.target = screen->target;
+   templ.last_level = 0;
+   templ.depth0 = 1;
+   templ.array_size = 1;
+
+   for (i = num_handles - 1; i >= 0; i--) {
+      struct pipe_resource *tex;
+
+      /* TODO: something a lot less ugly */
+      switch (i) {
+      case 0:
+         templ.width0 = width;
+         templ.height0 = height;
+         templ.format = pf;
+         break;
+      case 1:
+         templ.width0 = width / 2;
+         templ.height0 = height / 2;
+         templ.format = (num_handles == 2) ?
+               PIPE_FORMAT_RG88_UNORM :   /* NV12, etc */
+               PIPE_FORMAT_R8_UNORM;      /* I420, etc */
+         break;
+      case 2:
+         templ.width0 = width / 2;
+         templ.height0 = height / 2;
+         templ.format = PIPE_FORMAT_R8_UNORM;
+         break;
+      default:
+         unreachable("too many planes!");
+      }
+
+      tex = pscreen->resource_from_handle(pscreen,
+            &templ, &whandle[i], PIPE_TRANSFER_READ_WRITE);
+      if (!tex) {
+         pipe_resource_reference(&img->texture, NULL);
+         FREE(img);
+         return NULL;
+      }
+
+      tex->next = img->texture;
+      img->texture = tex;
+   }
+
+   img->level = 0;
+   img->layer = 0;
+   img->dri_format = format;
+   img->use = 0;
+   img->loader_private = loaderPrivate;
+
+   return img;
+}
+
 static __DRIimage *
 dri2_create_image_from_winsys(__DRIscreen *_screen,
                               int width, int height, const struct dri2_format_mapping *map,

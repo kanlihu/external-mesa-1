@@ -718,7 +718,6 @@ eglQueryString(EGLDisplay dpy, EGLint name)
    }
 }
 
-
 EGLBoolean EGLAPIENTRY
 eglGetConfigs(EGLDisplay dpy, EGLConfig *configs,
               EGLint config_size, EGLint *num_config)
@@ -738,6 +737,7 @@ eglGetConfigs(EGLDisplay dpy, EGLConfig *configs,
 
    RETURN_EGL_EVAL(disp, ret);
 }
+
 
 
 EGLBoolean EGLAPIENTRY
