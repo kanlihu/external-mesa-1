@@ -41,6 +41,8 @@
 #include "dri_helpers.h"
 #include "dri_query_renderer.h"
 
+#define KANLI_DEBUG 1
+
 DEBUG_GET_ONCE_BOOL_OPTION(swrast_no_present, "SWRAST_NO_PRESENT", FALSE);
 
 static inline void
@@ -440,13 +442,90 @@ drisw_update_tex_buffer(struct dri_drawable *drawable,
 
    pipe_transfer_unmap(pipe, transfer);
 }
+#if KANLI_DEBUG
+extern __DRIimage *dri2_create_from_texture(__DRIcontext *context, int target, unsigned texture,
+                                            int depth, int level, unsigned *error,
+                                            void *loaderPrivate);
+extern __DRIimage *dri2_lookup_egl_image(struct dri_screen *screen, void *handle);
+extern void dri2_destroy_image(__DRIimage *img);
+extern __DRIimage *dri2_create_image_from_winsys_old(__DRIscreen *_screen,
+                                                 int width, int height, int format,
+                                                 int num_handles, struct winsys_handle *whandle,
+                                                 void *loaderPrivate);
+
+int convert_to_fourcc(int format)
+{
+   switch(format) {
+   case __DRI_IMAGE_FORMAT_RGB565:
+      format = __DRI_IMAGE_FOURCC_RGB565;
+      break;
+   case __DRI_IMAGE_FORMAT_ARGB8888:
+      format = __DRI_IMAGE_FOURCC_ARGB8888;
+      break;
+   case __DRI_IMAGE_FORMAT_XRGB8888:
+      format = __DRI_IMAGE_FOURCC_XRGB8888;
+      break;
+   case __DRI_IMAGE_FORMAT_ABGR8888:
+      format = __DRI_IMAGE_FOURCC_ABGR8888;
+      break;
+   case __DRI_IMAGE_FORMAT_XBGR8888:
+      format = __DRI_IMAGE_FOURCC_XBGR8888;
+      break;
+   case __DRI_IMAGE_FORMAT_R8:
+      format = __DRI_IMAGE_FOURCC_R8;
+      break;
+   case __DRI_IMAGE_FORMAT_GR88:
+      format = __DRI_IMAGE_FOURCC_GR88;
+      break;
+   default:
+      return -1;
+   }
+   return format;
+}
+
+static GLboolean
+drisw_query_image(__DRIimage *image, int attrib, int *value)
+{
+   switch (attrib) {
+   case __DRI_IMAGE_ATTRIB_FORMAT:
+      *value = image->dri_format;
+      return GL_TRUE;
+   case __DRI_IMAGE_ATTRIB_WIDTH:
+      *value = image->texture->width0;
+      return GL_TRUE;
+   case __DRI_IMAGE_ATTRIB_HEIGHT:
+      *value = image->texture->height0;
+      return GL_TRUE;
+   case __DRI_IMAGE_ATTRIB_COMPONENTS:
+      if (image->dri_components == 0)
+         return GL_FALSE;
+      *value = image->dri_components;
+      return GL_TRUE;
+   case __DRI_IMAGE_ATTRIB_NUM_PLANES:
+      *value = 1;
+      return GL_TRUE;
+   case __DRI_IMAGE_ATTRIB_FOURCC:
+      *value = convert_to_fourcc(image->dri_format);
+      return GL_TRUE;
+   default:
+      return GL_FALSE;
+   }
+}
+
+#endif
 
 static __DRIimageExtension driSWImageExtension = {
+#if KANLI_DEBUG
+    .base = { __DRI_IMAGE, 11 },
+#else
     .base = { __DRI_IMAGE, 6 },
-
+#endif
     .createImageFromRenderbuffer  = dri2_create_image_from_renderbuffer,
     .createImageFromTexture = dri2_create_from_texture,
     .destroyImage = dri2_destroy_image,
+#if KANLI_DEBUG
+    .queryImage = drisw_query_image,
+#endif
 };
 
 static const __DRIrobustnessExtension dri2Robustness = {
@@ -538,6 +617,8 @@ drisw_init_screen(__DRIscreen * sPriv)
    else
       sPriv->extensions = drisw_screen_extensions;
    screen->lookup_egl_image = dri2_lookup_egl_image;
+   driSWRastExtension.createImageFromWinsys = dri2_create_image_from_winsys_old;
+
 
    return configs;
 fail:

@@ -37,6 +37,11 @@ struct winsys_handle
     * Input to texture_from_handle.
     * Output for texture_get_handle.
     */
+   void* external_buffer;
+   /**
+    * Input to texture_from_handle.
+    * Output for texture_get_handle.
+    */
    unsigned handle;
    /**
     * Input to texture_from_handle.

@@ -63,11 +63,16 @@
 struct gl_config;
 struct gl_context;
 
+#define KANLI_DEBUG 1
 /**
  * Extensions.
  */
 extern const __DRIcoreExtension driCoreExtension;
+#if KANLI_DEBUG
+extern __DRIswrastExtension driSWRastExtension;
+#else
 extern const __DRIswrastExtension driSWRastExtension;
+#endif
 extern const __DRIdri2Extension driDRI2Extension;
 extern const __DRI2configQueryExtension dri2ConfigQueryExtension;
 extern const __DRIcopySubBufferExtension driCopySubBufferExtension;

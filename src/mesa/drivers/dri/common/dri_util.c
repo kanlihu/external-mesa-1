@@ -821,9 +821,15 @@ const __DRIdri2Extension driDRI2Extension = {
     .createNewScreen2           = driCreateNewScreen2,
 };
 
+#define KANLI_DEBUG 1
+
+#if KANLI_DEBUG
+__DRIswrastExtension driSWRastExtension = {
+    .base = { __DRI_SWRAST, __DRI_SWRAST_VERSION },
+#else
 const __DRIswrastExtension driSWRastExtension = {
     .base = { __DRI_SWRAST, 4 },
-
+#endif
     .createNewScreen            = driSWRastCreateNewScreen,
     .createNewDrawable          = driCreateNewDrawable,
     .createNewContextForAPI     = driCreateNewContextForAPI,

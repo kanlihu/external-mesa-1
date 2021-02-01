@@ -1,7 +1,7 @@
 # Mesa 3-D graphics library
 #
-# Copyright (C) 2010-2011 Chia-I Wu <olvaffe@gmail.com>
-# Copyright (C) 2010-2011 LunarG Inc.
+# Copyright (C) 2015-2016 Zhen Wu <wuzhen@jidemail.com>
+# Copyright (C) 2015-2016 Jide Inc.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -21,18 +21,33 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-# src/gallium/Android.common.mk
+LOCAL_PATH := $(call my-dir)
+
+# get C_SOURCES
+include $(LOCAL_PATH)/Makefile.sources
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := $(C_SOURCES)
+
+LOCAL_MODULE := libmesa_pipe_llvmpipe
 
 LOCAL_C_INCLUDES += \
-	system/core/include \
-	$(MESA_TOP)/include/android_stub \
-	$(GALLIUM_TOP)/include \
-	$(GALLIUM_TOP)/auxiliary \
-	$(GALLIUM_TOP)/winsys \
-	$(GALLIUM_TOP)/drivers \
-	$(MESA_TOP)/src/etnaviv \
-	$(MESA_TOP)/src/freedreno \
-	$(MESA_TOP)/src/freedreno/ir3 \
-	$(MESA_TOP)/src/freedreno/registers
+	prebuilts/clang/host/linux-x86/clang-r383902b/include \
+	$(MESA_TOP)/src/compiler/nir
 
-include $(MESA_COMMON_MK)
+LOCAL_STATIC_LIBRARIES := \
+	libmesa_nir
+
+ifeq ($(MESA_ENABLE_LLVM),true)
+$(call mesa-build-with-llvm)
+endif
+
+include $(GALLIUM_COMMON_MK)
+include $(BUILD_STATIC_LIBRARY)
+
+ifneq ($(HAVE_GALLIUM_LLVMPIPE),)
+GALLIUM_TARGET_DRIVERS += swrast
+$(eval GALLIUM_LIBS += $(LOCAL_MODULE) libmesa_winsys_sw_dri)
+endif
+

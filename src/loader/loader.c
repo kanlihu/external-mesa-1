@@ -515,6 +515,17 @@ loader_get_extensions_name(const char *driver_name)
    return name;
 }
 
+#define LOG_TAG "INTEL-MESA"
+#if ANDROID_API_LEVEL >= 26
+#include <log/log.h>
+#else
+#include <cutils/log.h>
+#endif /* use log/log.h start from android 8 major version */
+#ifndef ALOGW
+#define ALOGW LOGW
+#endif
+#define dbg_printf(...)    ALOGW(__VA_ARGS__)
+
 /**
  * Opens a DRI driver using its driver name, returning the __DRIextension
  * entrypoints.
@@ -534,6 +545,7 @@ loader_open_driver(const char *driver_name,
    const struct __DRIextensionRec **extensions = NULL;
    const struct __DRIextensionRec **(*get_extensions)(void);
 
+   ALOGI("%s %d, driver_name:%s",__FUNCTION__,__LINE__, driver_name);
    search_paths = NULL;
    if (geteuid() == getuid() && search_path_vars) {
       for (int i = 0; search_path_vars[i] != NULL; i++) {
@@ -580,8 +592,10 @@ loader_open_driver(const char *driver_name,
    log_(_LOADER_DEBUG, "MESA-LOADER: dlopen(%s)\n", path);
 
    get_extensions_name = loader_get_extensions_name(driver_name);
+   ALOGI("%s %d, get_extensions_name:%s",__FUNCTION__,__LINE__, get_extensions_name);
    if (get_extensions_name) {
       get_extensions = dlsym(driver, get_extensions_name);
+		ALOGI("%s %d, get_extensions:%p",__FUNCTION__,__LINE__, get_extensions);
       if (get_extensions) {
          extensions = get_extensions();
       } else {
@@ -593,6 +607,7 @@ loader_open_driver(const char *driver_name,
 
    if (!extensions)
       extensions = dlsym(driver, __DRI_DRIVER_EXTENSIONS);
+   ALOGI("%s %d, extensions:%p",__FUNCTION__,__LINE__, extensions);
    if (extensions == NULL) {
       log_(_LOADER_WARNING,
            "MESA-LOADER: driver exports no extensions (%s)\n", dlerror());

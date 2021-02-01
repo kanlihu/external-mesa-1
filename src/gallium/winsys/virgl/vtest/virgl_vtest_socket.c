@@ -28,12 +28,29 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <sys/types.h>
+#include <sys/select.h>
+#include <linux/vm_sockets.h>
+
+
 #include <os/os_process.h>
 #include <util/format/u_format.h>
 
 #include "virgl_vtest_winsys.h"
 #include "virgl_vtest_public.h"
 
+#define LOG_TAG "INTEL-MESA"
+#if ANDROID_API_LEVEL >= 26
+#include <log/log.h>
+#else
+#include <cutils/log.h>
+#endif /* use log/log.h start from android 8 major version */
+#ifndef ALOGW
+#define ALOGW LOGW
+#endif
+#define dbg_printf(...)	ALOGW(__VA_ARGS__)
+
+#define debug_printf dbg_printf
 /* block read/write routines */
 static int virgl_block_write(int fd, void *buf, int size)
 {
@@ -60,7 +77,7 @@ static int virgl_block_read(int fd, void *buf, int size)
    do {
       ret = read(fd, ptr, left);
       if (ret <= 0) {
-         fprintf(stderr,
+         debug_printf(
                  "lost connection to rendering server on %d read %d %d\n",
                  size, ret, errno);
          abort();
@@ -92,23 +109,23 @@ static int virgl_vtest_receive_fd(int socket_fd)
 
     int size = recvmsg(socket_fd, &msgh, 0);
     if (size < 0) {
-      fprintf(stderr, "Failed with %s\n", strerror(errno));
+      debug_printf("Failed with %s\n", strerror(errno));
       return -1;
     }
 
     cmsgh = CMSG_FIRSTHDR(&msgh);
     if (!cmsgh) {
-      fprintf(stderr, "No headers available\n");
+      debug_printf("No headers available\n");
       return -1;
     }
 
     if (cmsgh->cmsg_level != SOL_SOCKET) {
-      fprintf(stderr, "invalid cmsg_level %d\n", cmsgh->cmsg_level);
+      debug_printf("invalid cmsg_level %d\n", cmsgh->cmsg_level);
       return -1;
     }
 
     if (cmsgh->cmsg_type != SCM_RIGHTS) {
-      fprintf(stderr, "invalid cmsg_type %d\n", cmsgh->cmsg_type);
+      debug_printf("invalid cmsg_type %d\n", cmsgh->cmsg_type);
       return -1;
     }
 
@@ -195,23 +212,31 @@ static int virgl_vtest_negotiate_version(struct virgl_vtest_winsys *vws)
 
 int virgl_vtest_connect(struct virgl_vtest_winsys *vws)
 {
-   struct sockaddr_un un;
+   struct sockaddr_vm sa = {
+      .svm_family = AF_VSOCK,
+   };
    int sock, ret;
+   sa.svm_cid = 2;
+   sa.svm_port = 1040;
 
-   sock = socket(PF_UNIX, SOCK_STREAM, 0);
-   if (sock < 0)
+   sock = socket(AF_VSOCK, SOCK_STREAM, 0);
+   if (sock < 0) {
+      debug_printf("%s %d sock:%d\n", __FUNCTION__,__LINE__, sock);
       return -1;
+   }
 
-   memset(&un, 0, sizeof(un));
-   un.sun_family = AF_UNIX;
-   snprintf(un.sun_path, sizeof(un.sun_path), "%s", VTEST_DEFAULT_SOCKET_NAME);
-
-   do {
-      ret = 0;
-      if (connect(sock, (struct sockaddr *)&un, sizeof(un)) < 0) {
-         ret = -errno;
+   while (true) {
+      ret = connect(sock, (struct sockaddr*)&sa, sizeof(sa));
+      if (ret < 0 && errno != EISCONN) {
+         debug_printf("connect error ret :%d errno:%d %s", ret, errno, strerror(errno));
+         close(sock);
+         return -1;
       }
-   } while (ret == -EINTR);
+      if (ret < 0 && errno == EINTR) {
+         continue;
+      }
+      break;
+   }
 
    vws->sock_fd = sock;
    virgl_vtest_send_init(vws);
@@ -307,7 +332,7 @@ static int virgl_vtest_send_resource_create2(struct virgl_vtest_winsys *vws,
 
    *out_fd = virgl_vtest_receive_fd(vws->sock_fd);
    if (*out_fd < 0) {
-      fprintf(stderr, "failed to get fd\n");
+      debug_printf("failed to get fd\n");
       return -1;
    }
 

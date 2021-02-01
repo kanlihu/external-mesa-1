@@ -735,9 +735,13 @@ static const struct dri2_extension_match swrast_driver_extensions[] = {
    { __DRI_SWRAST, 2, offsetof(struct dri2_egl_display, swrast) },
    { NULL, 0, 0 }
 };
+#define KANLI_DEBUG 1
 
 static const struct dri2_extension_match swrast_core_extensions[] = {
    { __DRI_TEX_BUFFER, 2, offsetof(struct dri2_egl_display, tex_buffer) },
+#if KANLI_DEBUG
+   { __DRI_IMAGE, 1, offsetof(struct dri2_egl_display, image) },
+#endif
    { NULL, 0, 0 }
 };
 
@@ -785,6 +789,7 @@ dri2_bind_extensions(struct dri2_egl_display *dri2_dpy,
    }
 
    for (int j = 0; matches[j].name; j++) {
+	  _eglLog(_EGL_DEBUG, "%s %d j:%d matches[j].name:%s offset:%d",__FUNCTION__,__LINE__,j,matches[j].name, matches[j].offset);
       field = ((char *) dri2_dpy + matches[j].offset);
       if (*(const __DRIextension **) field == NULL) {
          if (optional) {
@@ -1057,6 +1062,18 @@ dri2_setup_swap_interval(_EGLDisplay *disp, int max_swap_interval)
    }
 }
 
+#define LOG_TAG "INTEL-MESA"
+#if ANDROID_API_LEVEL >= 26
+#include <log/log.h>
+#else
+#include <cutils/log.h>
+#endif /* use log/log.h start from android 8 major version */
+#ifndef ALOGW
+#define ALOGW LOGW
+#endif
+#define dbg_printf(...)    ALOGW(__VA_ARGS__)
+
+
 /* All platforms but DRM call this function to create the screen and populate
  * the driver_configs. DRM inherits that information from its display - GBM.
  */
@@ -1065,6 +1082,7 @@ dri2_create_screen(_EGLDisplay *disp)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
 
+	ALOGI("%s %d, image_driver:%p, swrast:%p",__FUNCTION__,__LINE__,dri2_dpy->image_driver,dri2_dpy->swrast);
    if (dri2_dpy->image_driver) {
       dri2_dpy->dri_screen =
          dri2_dpy->image_driver->createNewScreen2(0, dri2_dpy->fd,
@@ -1117,10 +1135,11 @@ dri2_setup_extensions(_EGLDisplay *disp)
 
    extensions = dri2_dpy->core->getExtensions(dri2_dpy->dri_screen);
 
-   if (dri2_dpy->image_driver || dri2_dpy->dri2)
+   if (dri2_dpy->image_driver || dri2_dpy->dri2) {
       mandatory_core_extensions = dri2_core_extensions;
-   else
+   } else {
       mandatory_core_extensions = swrast_core_extensions;
+   }
 
    if (!dri2_bind_extensions(dri2_dpy, mandatory_core_extensions, extensions, false))
       return EGL_FALSE;

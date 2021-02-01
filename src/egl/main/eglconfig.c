@@ -71,6 +71,17 @@ _eglInitConfig(_EGLConfig *conf, _EGLDisplay *disp, EGLint id)
    conf->ComponentType = EGL_COLOR_COMPONENT_TYPE_FIXED_EXT;
 }
 
+#define LOG_TAG "INTEL-MESA"
+#if ANDROID_API_LEVEL >= 26
+#include <log/log.h>
+#else
+#include <cutils/log.h>
+#endif /* use log/log.h start from android 8 major version */
+#ifndef ALOGW
+#define ALOGW LOGW
+#endif
+#define dbg_printf(...)    ALOGW(__VA_ARGS__)
+
 
 /**
  * Link a config to its display and return the handle of the link.
@@ -82,11 +93,11 @@ EGLConfig
 _eglLinkConfig(_EGLConfig *conf)
 {
    _EGLDisplay *disp = conf->Display;
-
    /* sanity check */
    assert(disp);
    assert(conf->ConfigID > 0);
 
+   ALOGI("%s %d, disp->Configs:%p", __FUNCTION__, __LINE__,disp->Configs);
    if (!disp->Configs) {
       disp->Configs = _eglCreateArray("Config", 16);
       if (!disp->Configs)

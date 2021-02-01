@@ -51,6 +51,13 @@
 
 #define ALIGN(val, align)	(((val) + (align) - 1) & ~((align) - 1))
 
+#define KANLI_DEBUG 1
+
+#if KANLI_DEBUG
+#include "frontend/winsys_handle.h"
+#include "egl_dri2_fallbacks.h"
+#endif
+
 enum chroma_order {
    YCbCr,
    YCrCb,
@@ -1708,8 +1715,13 @@ droid_open_device(_EGLDisplay *disp, bool swrast)
 
 #endif
 
+#if KANLI_DEBUG
+EGLBoolean
+dri2_initialize_android_drm(const _EGLDriver *drv, _EGLDisplay *disp)
+#else 
 EGLBoolean
 dri2_initialize_android(const _EGLDriver *drv, _EGLDisplay *disp)
+#endif
 {
    _EGLDevice *dev;
    bool device_opened = false;
@@ -1821,3 +1833,394 @@ cleanup:
    dri2_display_destroy(disp);
    return _eglError(EGL_NOT_INITIALIZED, err);
 }
+
+#if KANLI_DEBUG
+static struct dri2_egl_display *alloc_dri2_egl_display(bool is_swrast)
+{
+   struct dri2_egl_display *dri2_dpy = NULL;
+   const hw_module_t *mod;
+
+   if (!hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &mod)) {
+      gralloc_module_t *gr_mod = (gralloc_module_t *) mod;
+      if (is_swrast || gr_mod->perform) {
+         dri2_dpy = calloc(1, sizeof(*dri2_dpy));
+         if (dri2_dpy)
+            dri2_dpy->gralloc = gr_mod;
+         else
+            _eglError(EGL_BAD_ALLOC, "eglInitialize");
+      }
+   } else {
+      _eglLog(_EGL_FATAL, "DRI2: failed to get gralloc module");
+   }
+
+   return dri2_dpy;
+}
+
+static int get_format(int format)
+{
+   switch (format) {
+   case HAL_PIXEL_FORMAT_BGRA_8888: return __DRI_IMAGE_FORMAT_ARGB8888;
+   case HAL_PIXEL_FORMAT_RGB_565:   return __DRI_IMAGE_FORMAT_RGB565;
+   case HAL_PIXEL_FORMAT_RGBA_8888: return __DRI_IMAGE_FORMAT_ABGR8888;
+   case HAL_PIXEL_FORMAT_RGBX_8888: return __DRI_IMAGE_FORMAT_XBGR8888;
+   default:
+      _eglLog(_EGL_WARNING, "unsupported native buffer format 0x%x", format);
+   }
+   return -1;
+}
+
+static int swrastUpdateBuffer(struct dri2_egl_surface *dri2_surf)
+{
+   if (dri2_surf->base.Type == EGL_WINDOW_BIT) {
+      if (!dri2_surf->buffer && !droid_window_dequeue_buffer(dri2_surf)) {
+         _eglLog(_EGL_WARNING, "failed to dequeue buffer for window");
+         return 1;
+      }
+      dri2_surf->base.Width = dri2_surf->buffer->width;
+      dri2_surf->base.Height = dri2_surf->buffer->height;
+      return 0;
+   }
+   return !dri2_surf->buffer;
+}
+
+static void
+swrastGetDrawableInfo(__DRIdrawable * draw,
+                      int *x, int *y, int *w, int *h,
+                      void *loaderPrivate)
+{
+   struct dri2_egl_surface *dri2_surf = loaderPrivate;
+
+   swrastUpdateBuffer(dri2_surf);
+
+   *x = 0;
+   *y = 0;
+   *w = dri2_surf->base.Width;
+   *h = dri2_surf->base.Height;
+}
+
+static void
+swrastPutImage2(__DRIdrawable * draw, int op,
+                int x, int y, int w, int h, int stride,
+                char *data, void *loaderPrivate)
+{
+   struct dri2_egl_surface *dri2_surf = loaderPrivate;
+   _EGLDisplay *egl_dpy = dri2_surf->base.Resource.Display;
+   char *dstPtr, *srcPtr;
+   size_t BPerPixel, dstStride, copyWidth, xOffset;
+
+   if (swrastUpdateBuffer(dri2_surf)) {
+      return;
+   }
+
+   BPerPixel = get_format_bpp(dri2_surf->buffer->format);
+   dstStride = BPerPixel * dri2_surf->buffer->stride;
+   copyWidth = BPerPixel * w;
+   xOffset = BPerPixel * x;
+   if (stride == 0)
+      stride = copyWidth;
+
+   /* drivers expect we do these checks (and some rely on it) */
+   if (copyWidth > dstStride - xOffset)
+      copyWidth = dstStride - xOffset;
+   if (h > dri2_surf->base.Height - y)
+      h = dri2_surf->base.Height - y;
+
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(egl_dpy);
+   if (dri2_dpy->gralloc->lock(dri2_dpy->gralloc, dri2_surf->buffer->handle, GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN,
+                       0, 0, dri2_surf->buffer->width, dri2_surf->buffer->height, (void**)&dstPtr)) {
+      _eglLog(_EGL_WARNING, "can not lock window buffer");
+      return;
+   }
+
+   dstPtr += y * dstStride + xOffset;
+   srcPtr = data;
+
+   if (xOffset == 0 && copyWidth == stride && copyWidth == dstStride) {
+      memcpy(dstPtr, srcPtr, copyWidth * h);
+   } else {
+      for (; h > 0; h--) {
+         memcpy(dstPtr, srcPtr, copyWidth);
+         srcPtr += stride;
+         dstPtr += dstStride;
+      }
+   }
+
+   if (dri2_dpy->gralloc->unlock(dri2_dpy->gralloc, dri2_surf->buffer->handle)) {
+      _eglLog(_EGL_WARNING, "unlock buffer failed");
+   }
+
+   droid_window_enqueue_buffer(egl_dpy, dri2_surf);
+}
+
+static void
+swrastPutImage(__DRIdrawable * draw, int op,
+              int x, int y, int w, int h,
+              char *data, void *loaderPrivate)
+{
+   swrastPutImage2(draw, op, x, y, w, h, 0, data, loaderPrivate);
+}
+
+static void
+swrastGetImage(__DRIdrawable * read,
+               int x, int y, int w, int h,
+               char *data, void *loaderPrivate)
+{
+   struct dri2_egl_surface *dri2_surf = loaderPrivate;
+   size_t BPerPixel, srcStride, copyWidth, xOffset;
+   char *dstPtr, *srcPtr;
+
+   _eglLog(_EGL_WARNING, "calling swrastGetImage with read=%p, private=%p, w=%d, h=%d", read, loaderPrivate, w, h);
+
+   if (swrastUpdateBuffer(dri2_surf)) {
+      _eglLog(_EGL_WARNING, "swrastGetImage failed data unchanged");
+      return;
+   }
+
+   BPerPixel = get_format_bpp(dri2_surf->buffer->format);
+   srcStride = BPerPixel * dri2_surf->buffer->stride;
+   copyWidth = BPerPixel * w;
+   xOffset = BPerPixel * x;
+
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(dri2_surf->base.Resource.Display);
+   if (dri2_dpy->gralloc->lock(dri2_dpy->gralloc, dri2_surf->buffer->handle, GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN,
+                       0, 0, dri2_surf->buffer->width, dri2_surf->buffer->height, (void**)&srcPtr)) {
+      _eglLog(_EGL_WARNING, "can not lock window buffer");
+      memset(data, 0, copyWidth * h);
+      return;
+   }
+
+   srcPtr += y * srcStride + xOffset;
+   dstPtr = data;
+
+   if (xOffset == 0 && copyWidth == srcStride) {
+      memcpy(dstPtr, srcPtr, copyWidth * h);
+   } else {
+      for (; h > 0; h--) {
+         memcpy(dstPtr, srcPtr, copyWidth);
+         srcPtr += srcStride;
+         dstPtr += copyWidth;
+      }
+   }
+
+   if (dri2_dpy->gralloc->unlock(dri2_dpy->gralloc, dri2_surf->buffer->handle)) {
+      _eglLog(_EGL_WARNING, "unlock buffer failed");
+   }
+}
+
+static EGLBoolean
+swrast_swap_buffers(const _EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *draw)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
+
+   dri2_dpy->core->swapBuffers(dri2_surf->dri_drawable);
+
+   return EGL_TRUE;
+}
+
+static _EGLImage *
+swrast_create_image_android_native_buffer(_EGLDisplay *disp, _EGLContext *ctx,
+                                          struct ANativeWindowBuffer *buf)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct dri2_egl_image *dri2_img;
+   struct winsys_handle whandle;
+   EGLint format;
+
+   if (ctx != NULL) {
+      /* From the EGL_ANDROID_image_native_buffer spec:
+       *
+       *     * If <target> is EGL_NATIVE_BUFFER_ANDROID and <ctx> is not
+       *       EGL_NO_CONTEXT, the error EGL_BAD_CONTEXT is generated.
+       */
+      _eglError(EGL_BAD_CONTEXT, "eglCreateEGLImageKHR: for "
+                "EGL_NATIVE_BUFFER_ANDROID, the context must be "
+                "EGL_NO_CONTEXT");
+      return NULL;
+   }
+
+   if (!buf || buf->common.magic != ANDROID_NATIVE_BUFFER_MAGIC ||
+       buf->common.version != sizeof(*buf)) {
+      _eglError(EGL_BAD_PARAMETER, "eglCreateEGLImageKHR");
+      return NULL;
+   }
+
+   /* see the table in droid_add_configs_for_visuals */
+   format = get_format(buf->format);
+   if (format < 0)
+      return NULL;
+
+   dri2_img = calloc(1, sizeof(*dri2_img));
+   if (!dri2_img) {
+      _eglError(EGL_BAD_ALLOC, "droid_create_image_mesa_drm");
+      return NULL;
+   }
+
+   _eglInitImage(&dri2_img->base, disp);
+
+   memset(&whandle, 0, sizeof(whandle));
+   whandle.type = WINSYS_HANDLE_TYPE_SHMID;
+   whandle.external_buffer = buf;
+   whandle.stride = buf->stride * get_format_bpp(buf->format);
+
+   dri2_img->dri_image =
+         dri2_dpy->swrast->createImageFromWinsys(dri2_dpy->dri_screen,
+                                                 buf->width,
+                                                 buf->height,
+                                                 format,
+                                                 1, &whandle,
+                                                 dri2_img);
+
+   if (!dri2_img->dri_image) {
+      free(dri2_img);
+      _eglError(EGL_BAD_ALLOC, "droid_create_image_mesa_drm");
+      return NULL;
+   }
+
+   return &dri2_img->base;
+}
+
+static _EGLImage *
+swrast_create_image_khr(const _EGLDriver *drv, _EGLDisplay *disp,
+                        _EGLContext *ctx, EGLenum target,
+                        EGLClientBuffer buffer, const EGLint *attr_list)
+{
+   switch (target) {
+   case EGL_NATIVE_BUFFER_ANDROID:
+      return swrast_create_image_android_native_buffer(disp, ctx,
+            (struct ANativeWindowBuffer *) buffer);
+   default:
+      return dri2_create_image_khr(drv, disp, ctx, target, buffer, attr_list);
+   }
+}
+
+static const __DRIswrastLoaderExtension droid_swrast_loader_extension = {
+   .base = { __DRI_SWRAST_LOADER, 2 },
+
+   .getDrawableInfo     = swrastGetDrawableInfo,
+   .putImage            = swrastPutImage,
+   .getImage            = swrastGetImage,
+   .putImage2           = swrastPutImage2,
+};
+
+static const __DRIextension *droid_swrast_loader_extensions[] = {
+   &droid_swrast_loader_extension.base,
+   &image_lookup_extension.base,
+   NULL,
+};
+
+/* differs with droid_display_vtbl in create_image, swap_buffers */
+static struct dri2_egl_display_vtbl swrast_display_vtbl = {
+    .authenticate = NULL,
+    .create_window_surface = droid_create_window_surface,
+    .create_pixmap_surface = dri2_fallback_create_pixmap_surface,
+    .create_pbuffer_surface = droid_create_pbuffer_surface,
+    .destroy_surface = droid_destroy_surface,
+    .create_image = swrast_create_image_khr,
+    .swap_interval = dri2_fallback_swap_interval,
+    .swap_buffers = swrast_swap_buffers,
+    .swap_buffers_with_damage = dri2_fallback_swap_buffers_with_damage,
+    .swap_buffers_region = dri2_fallback_swap_buffers_region,
+    .post_sub_buffer = dri2_fallback_post_sub_buffer,
+    .copy_buffers = dri2_fallback_copy_buffers,
+    .query_buffer_age = dri2_fallback_query_buffer_age,
+    .create_wayland_buffer_from_image = dri2_fallback_create_wayland_buffer_from_image,
+    .get_sync_values = dri2_fallback_get_sync_values,
+    .get_dri_drawable = dri2_surface_get_dri_drawable,
+};
+#define LOG_TAG "INTEL-MESA"
+#if ANDROID_API_LEVEL >= 26
+#include <log/log.h>
+#else
+#include <cutils/log.h>
+#endif /* use log/log.h start from android 8 major version */
+#ifndef ALOGW
+#define ALOGW LOGW
+#endif
+#define dbg_printf(...)    ALOGW(__VA_ARGS__)
+
+EGLBoolean
+dri2_initialize_android_swrast(const _EGLDriver *drv, _EGLDisplay *dpy)
+{
+   struct dri2_egl_display *dri2_dpy;
+   const char *err = "";
+   const hw_module_t *mod;
+   bool device_opened = false;
+
+   dri2_dpy = alloc_dri2_egl_display(true);
+   if (!dri2_dpy)
+      return _eglError(EGL_BAD_ALLOC, "eglInitialize");
+
+   dpy->DriverData = (void *) dri2_dpy;
+
+   //dri2_dpy->driver_name = strdup("virtio_gpu");
+   dri2_dpy->driver_name = strdup("swrast");
+   if (!dri2_load_driver_swrast(dpy)) {
+      err = "DRISW: failed to load swrast driver";
+      ALOGI("%s %d err:%s",__FUNCTION__,__LINE__, err);
+      goto cleanup_driver_name;
+   }
+
+   dri2_dpy->loader_extensions = droid_swrast_loader_extensions;
+
+   if (!dri2_create_screen(dpy)) {
+      err = "DRISW: failed to create screen";
+      ALOGI("%s %d err:%s",__FUNCTION__,__LINE__, err);
+      goto cleanup_driver;
+   }
+
+   if (!dri2_setup_extensions(dpy)) {
+      err = "DRISW: failed to setup extensions";
+      ALOGI("%s %d err:%s",__FUNCTION__,__LINE__, err);
+      goto cleanup_screen;
+   }
+
+   dri2_setup_screen(dpy);
+
+   /* We set the maximum swap interval as 1 for Android platform, since it is
+    * the maximum value supported by Android according to the value of
+    * ANativeWindow::maxSwapInterval.
+    */
+   dri2_setup_swap_interval(dpy, 1);
+
+
+   if (!droid_add_configs_for_visuals(drv, dpy)) {
+      err = "DRISW: failed to add configs";
+
+      ALOGI("%s %d err:%s",__FUNCTION__,__LINE__, err);
+      goto cleanup_screen;
+   }
+
+   dpy->Extensions.ANDROID_framebuffer_target = EGL_TRUE;
+   dpy->Extensions.ANDROID_image_native_buffer = EGL_TRUE;
+   dpy->Extensions.ANDROID_recordable = EGL_TRUE;
+   dpy->Extensions.KHR_image_base = EGL_TRUE;
+
+   /* Fill vtbl last to prevent accidentally calling virtual function during
+    * initialization.
+    */
+   dri2_dpy->vtbl = &swrast_display_vtbl;
+
+   return EGL_TRUE;
+
+cleanup_screen:
+   dri2_dpy->core->destroyScreen(dri2_dpy->dri_screen);
+cleanup_driver:
+   dlclose(dri2_dpy->driver);
+cleanup_driver_name:
+   free(dri2_dpy->driver_name);
+   free(dri2_dpy);
+
+   return _eglError(EGL_NOT_INITIALIZED, err);
+}
+
+EGLBoolean
+dri2_initialize_android(const _EGLDriver *drv, _EGLDisplay *dpy)
+{
+   EGLBoolean initialized = EGL_FALSE;
+
+   initialized = dri2_initialize_android_swrast(drv, dpy);
+
+   return initialized;
+}
+#endif

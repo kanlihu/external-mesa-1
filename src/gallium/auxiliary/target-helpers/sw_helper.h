@@ -69,6 +69,7 @@ sw_screen_create_named(struct sw_winsys *winsys, const char *driver)
    return screen;
 }
 
+#define KANLI_DEBUG 1
 
 struct pipe_screen *
 sw_screen_create(struct sw_winsys *winsys)
@@ -89,6 +90,9 @@ sw_screen_create(struct sw_winsys *winsys)
 #endif
 
    driver = debug_get_option("GALLIUM_DRIVER", default_driver);
+#if KANLI_DEBUG
+   default_driver = "llvmpipe";
+#endif
    return sw_screen_create_named(winsys, driver);
 }
 

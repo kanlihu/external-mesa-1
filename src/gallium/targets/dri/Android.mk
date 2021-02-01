@@ -30,7 +30,7 @@ LOCAL_MODULE := gallium_dri
 LOCAL_MODULE_RELATIVE_PATH := $(MESA_DRI_MODULE_REL_PATH)
 LOCAL_SRC_FILES := target.c
 
-LOCAL_CFLAGS :=
+LOCAL_CFLAGS += -DGALLIUM_LLVMPIPE -DGALLIUM_SOFTPIPE
 
 # We need --undefined-version as some functions in dri.sym may be missing
 # depending on which drivers are enabled or not. Otherwise, we get the error:
@@ -41,6 +41,7 @@ LOCAL_LDFLAGS := \
 
 LOCAL_SHARED_LIBRARIES := \
 	libdl \
+	libhardware \
 	libglapi \
 	libz \
 	liblog
@@ -90,6 +91,7 @@ LOCAL_WHOLE_STATIC_LIBRARIES := \
 
 # sort GALLIUM_SHARED_LIBS to remove any duplicates
 LOCAL_SHARED_LIBRARIES += $(sort $(GALLIUM_SHARED_LIBS))
+LOCAL_SHARED_LIBRARIES += libLLVM_android
 
 ifneq ($(filter 5 6 7, $(MESA_ANDROID_MAJOR_VERSION)),)
 LOCAL_POST_INSTALL_CMD := \

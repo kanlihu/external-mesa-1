@@ -48,6 +48,17 @@
 #include "frontend/sw_winsys.h"
 #include "dri_sw_winsys.h"
 
+#define KANLI_DEBUG 1
+
+#if KANLI_DEBUG
+#ifdef ANDROID
+#include <system/graphics.h>
+#include <system/window.h>
+#include <hardware/gralloc.h>
+#endif
+#endif
+
+
 
 struct dri_sw_displaytarget
 {
@@ -61,7 +72,32 @@ struct dri_sw_displaytarget
    void *data;
    void *mapped;
    const void *front_private;
+#if KANLI_DEBUG
+#ifdef ANDROID
+   struct ANativeWindowBuffer *androidBuffer;
+#endif
+#endif
+
 };
+
+#if KANLI_DEBUG
+#ifdef ANDROID
+const struct gralloc_module_t* get_gralloc()
+{
+   static const struct gralloc_module_t* gr_module = NULL;
+   const hw_module_t *mod;
+   int err;
+
+   if (!gr_module) {
+      err =  hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &mod);
+      if (!err) {
+         gr_module = (gralloc_module_t *) mod;
+      }
+   }
+   return gr_module;
+}
+#endif
+#endif
 
 struct dri_sw_winsys
 {
@@ -176,6 +212,13 @@ dri_sw_displaytarget_destroy(struct sw_winsys *ws,
       shmctl(dri_sw_dt->shmid, IPC_RMID, 0);
 #endif
    } else {
+#if KANLI_DEBUG
+#ifdef ANDROID
+   if (dri_sw_dt->androidBuffer) {
+      dri_sw_dt->androidBuffer->common.decRef(&dri_sw_dt->androidBuffer->common);
+   }
+#endif
+#endif
       align_free(dri_sw_dt->data);
    }
 
@@ -188,6 +231,20 @@ dri_sw_displaytarget_map(struct sw_winsys *ws,
                          unsigned flags)
 {
    struct dri_sw_displaytarget *dri_sw_dt = dri_sw_displaytarget(dt);
+#if KANLI_DEBUG
+#ifdef ANDROID
+   if (dri_sw_dt->androidBuffer) {
+      if (!get_gralloc()->lock(get_gralloc(), dri_sw_dt->androidBuffer->handle,
+                              GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN,
+                              0, 0, dri_sw_dt->androidBuffer->width, dri_sw_dt->androidBuffer->height,
+                              (void**)&dri_sw_dt->mapped)) {
+         dri_sw_dt->map_flags = flags;
+         return dri_sw_dt->mapped;
+      }
+   }
+#endif
+#endif
+
    dri_sw_dt->mapped = dri_sw_dt->data;
 
    if (dri_sw_dt->front_private && (flags & PIPE_TRANSFER_READ)) {
@@ -208,6 +265,13 @@ dri_sw_displaytarget_unmap(struct sw_winsys *ws,
       dri_sw_ws->lf->put_image2((void *)dri_sw_dt->front_private, dri_sw_dt->data, 0, 0, dri_sw_dt->width, dri_sw_dt->height, dri_sw_dt->stride);
    }
    dri_sw_dt->map_flags = 0;
+#if KANLI_DEBUG
+#ifdef ANDROID
+   if (dri_sw_dt->androidBuffer) {
+      get_gralloc()->unlock(get_gralloc(), dri_sw_dt->androidBuffer->handle);
+   }
+#endif
+#endif
    dri_sw_dt->mapped = NULL;
 }
 
@@ -217,6 +281,24 @@ dri_sw_displaytarget_from_handle(struct sw_winsys *winsys,
                                  struct winsys_handle *whandle,
                                  unsigned *stride)
 {
+#if KANLI_DEBUG
+#ifdef ANDROID
+   struct dri_sw_displaytarget *dri_sw_dt;
+
+   if (whandle->type == WINSYS_HANDLE_TYPE_SHMID) {
+      dri_sw_dt = CALLOC_STRUCT(dri_sw_displaytarget);
+      dri_sw_dt->width = templ->width0;
+      dri_sw_dt->height = templ->height0;
+      dri_sw_dt->androidBuffer = whandle->external_buffer;
+      dri_sw_dt->stride = whandle->stride;
+
+      dri_sw_dt->androidBuffer->common.incRef(&dri_sw_dt->androidBuffer->common);
+      *stride = dri_sw_dt->stride;
+
+      return (struct sw_displaytarget *)dri_sw_dt;
+   }
+#endif
+#endif
    assert(0);
    return NULL;
 }

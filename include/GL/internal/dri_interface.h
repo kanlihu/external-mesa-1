@@ -51,6 +51,7 @@ typedef struct drm_clip_rect drm_clip_rect_t;
 #include <GL/gl.h>
 
 #include <stdint.h>
+#define KANLI_DEBUG 1
 
 /**
  * \name DRI interface structures
@@ -66,6 +67,10 @@ typedef struct __DRIdrawableRec		__DRIdrawable;
 typedef struct __DRIconfigRec		__DRIconfig;
 typedef struct __DRIframebufferRec	__DRIframebuffer;
 typedef struct __DRIversionRec		__DRIversion;
+#if KANLI_DEBUG
+struct winsys_handle;
+typedef struct __DRIimageRec		__DRIimage;
+#endif
 
 typedef struct __DRIcoreExtensionRec		__DRIcoreExtension;
 typedef struct __DRIextensionRec		__DRIextension;
@@ -1001,7 +1006,11 @@ struct __DRIlegacyExtensionRec {
  * conjunction with the core extension.
  */
 #define __DRI_SWRAST "DRI_SWRast"
+#if KANLI_DEBUG
+#define __DRI_SWRAST_VERSION 5
+#else
 #define __DRI_SWRAST_VERSION 4
+#endif
 
 struct __DRIswrastExtensionRec {
     __DRIextension base;
@@ -1048,7 +1057,17 @@ struct __DRIswrastExtensionRec {
                                     const __DRIextension **driver_extensions,
                                     const __DRIconfig ***driver_configs,
                                     void *loaderPrivate);
-
+#if KANLI_DEBUG
+   /**
+    * create a dri image from native window system handle
+    *
+    * \since version 5
+    */
+   __DRIimage *(*createImageFromWinsys)(__DRIscreen *_screen,
+                                        int width, int height, int format,
+                                        int num_handles, struct winsys_handle *whandle,
+                                        void *loaderPrivate);
+#endif
 };
 
 /** Common DRI function definitions, shared among DRI2 and Image extensions
@@ -1386,6 +1405,31 @@ struct __DRIdri2ExtensionRec {
 #define __DRI_IMAGE_FOURCC_SABGR8888	0x84324258
 #define __DRI_IMAGE_FOURCC_SXRGB8888	0x85324258
 
+#define __DRI_IMAGE_FOURCC_R8       0x20203852
+#define __DRI_IMAGE_FOURCC_GR88     0x38385247
+#define __DRI_IMAGE_FOURCC_ARGB1555 0x35315241
+#define __DRI_IMAGE_FOURCC_RGB565   0x36314752
+#define __DRI_IMAGE_FOURCC_ARGB8888 0x34325241
+#define __DRI_IMAGE_FOURCC_XRGB8888 0x34325258
+#define __DRI_IMAGE_FOURCC_ABGR8888 0x34324241
+#define __DRI_IMAGE_FOURCC_XBGR8888 0x34324258
+#define __DRI_IMAGE_FOURCC_SARGB8888    0x83324258
+#define __DRI_IMAGE_FOURCC_YUV410   0x39565559
+#define __DRI_IMAGE_FOURCC_YUV411   0x31315559
+#define __DRI_IMAGE_FOURCC_YUV420   0x32315559
+#define __DRI_IMAGE_FOURCC_YUV422   0x36315559
+#define __DRI_IMAGE_FOURCC_YUV444   0x34325559
+#define __DRI_IMAGE_FOURCC_NV12     0x3231564e
+#define __DRI_IMAGE_FOURCC_NV16     0x3631564e
+#define __DRI_IMAGE_FOURCC_YUYV     0x56595559
+
+#define __DRI_IMAGE_FOURCC_YVU410   0x39555659
+#define __DRI_IMAGE_FOURCC_YVU411   0x31315659
+#define __DRI_IMAGE_FOURCC_YVU420   0x32315659
+#define __DRI_IMAGE_FOURCC_YVU422   0x36315659
+#define __DRI_IMAGE_FOURCC_YVU444   0x34325659
+
+
 /**
  * Queryable on images created by createImageFromNames.
  *
@@ -1493,7 +1537,9 @@ enum __DRIChromaSiting {
 /* Available in version 16 */
 #define __DRI_IMAGE_FORMAT_MODIFIER_ATTRIB_PLANE_COUNT   0x0001
 
+#if !KANLI_DEBUG
 typedef struct __DRIimageRec          __DRIimage;
+#endif
 typedef struct __DRIimageExtensionRec __DRIimageExtension;
 struct __DRIimageExtensionRec {
     __DRIextension base;

@@ -127,7 +127,7 @@ virgl_vtest_transfer_get_internal(struct virgl_winsys *vws,
    if (vtws->protocol_version >= 2) {
       if (flush_front_buffer) {
          if (box->depth > 1 || box->z > 1) {
-            fprintf(stderr, "Expected a 2D resource, received a 3D resource\n");
+            debug_printf("Expected a 2D resource, received a 3D resource\n");
             return -1;
          }
 
@@ -273,7 +273,7 @@ virgl_vtest_winsys_resource_create(struct virgl_winsys *vws,
 
       if (fd < 0) {
          FREE(res);
-         fprintf(stderr, "Unable to get a valid fd\n");
+         debug_printf("Unable to get a valid fd\n");
          return NULL;
       }
 
@@ -281,7 +281,7 @@ virgl_vtest_winsys_resource_create(struct virgl_winsys *vws,
                          fd, 0);
 
       if (res->ptr == MAP_FAILED) {
-         fprintf(stderr, "Client failed to map shared memory region\n");
+         debug_printf("Client failed to map shared memory region\n");
          close(fd);
          FREE(res);
          return NULL;
@@ -421,7 +421,7 @@ static void virgl_vtest_add_res(struct virgl_vtest_winsys *vtws,
                                                 cbuf->nres * sizeof(struct virgl_hw_buf*),
                                                 new_nres * sizeof(struct virgl_hw_buf*));
       if (!new_re_bo) {
-          fprintf(stderr,"failure to add relocation %d, %d\n", cbuf->cres, cbuf->nres);
+          debug_printf("failure to add relocation %d, %d\n", cbuf->cres, cbuf->nres);
           return;
       }
 

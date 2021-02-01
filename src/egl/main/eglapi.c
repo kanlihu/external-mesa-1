@@ -718,6 +718,16 @@ eglQueryString(EGLDisplay dpy, EGLint name)
    }
 }
 
+#define LOG_TAG "INTEL-MESA"
+#if ANDROID_API_LEVEL >= 26
+#include <log/log.h>
+#else
+#include <cutils/log.h>
+#endif /* use log/log.h start from android 8 major version */
+#ifndef ALOGW
+#define ALOGW LOGW
+#endif
+#define dbg_printf(...)    ALOGW(__VA_ARGS__)
 
 EGLBoolean EGLAPIENTRY
 eglGetConfigs(EGLDisplay dpy, EGLConfig *configs,
@@ -740,6 +750,7 @@ eglGetConfigs(EGLDisplay dpy, EGLConfig *configs,
 }
 
 
+
 EGLBoolean EGLAPIENTRY
 eglChooseConfig(EGLDisplay dpy, const EGLint *attrib_list, EGLConfig *configs,
                 EGLint config_size, EGLint *num_config)
@@ -754,10 +765,12 @@ eglChooseConfig(EGLDisplay dpy, const EGLint *attrib_list, EGLConfig *configs,
 
    if (!num_config)
       RETURN_EGL_ERROR(disp, EGL_BAD_PARAMETER, EGL_FALSE);
+   ALOGI("%s %d, num_config:%d", __FUNCTION__,__LINE__, *num_config);
 
    ret = _eglChooseConfig(drv, disp, attrib_list, configs,
                           config_size, num_config);
 
+   ALOGI("%s %d, ret:%d", __FUNCTION__,__LINE__, ret);
    RETURN_EGL_EVAL(disp, ret);
 }
 
